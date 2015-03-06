@@ -25,8 +25,8 @@ import urllib
 from django.conf import settings
 
 from wstore.offerings.resource_plugins.plugin import Plugin
-from .wgt import WgtFile
-from .template import TemplateParser
+from .wgt import WgtFile, InvalidContents
+from .template import TemplateParser, TemplateParseException
 
 
 class WirecloudPlugin(Plugin):
@@ -58,17 +58,29 @@ class WirecloudPlugin(Plugin):
 
     def on_pre_create(self, provider, data):
         # Build WGT object from the provided WGT file
-        if data['link'] != '':
-            self._wgt_path = self._download_wgt(data['link'], data['name'])
-        else:
-            # build wgt object from path
-            self._wgt_path = os.path.join(settings.BASEDIR, data['resource_path'])
+        try:
+            if data['link'] != '':
+                self._wgt_path = self._download_wgt(data['link'], data['name'])
+            else:
+                # build wgt object from path
+                content_path = data['content_path']
 
-        wgt_file = WgtFile(self._wgt_path)
+                if data['content_path'][0] == '/':
+                    content_path = data['content_path'][1:]
 
-        # Get template file
-        template_file = wgt_file.get_template()
-        self._template_parser = TemplateParser(template_file)
+                self._wgt_path = os.path.join(settings.BASEDIR, content_path)
+
+            wgt_file = WgtFile(self._wgt_path)
+
+            # Get template file
+            template_file = wgt_file.get_template()
+            self._template_parser = TemplateParser(template_file)
+        except InvalidContents as e:
+            raise e
+        except TemplateParseException as e:
+            raise e
+        except:
+            raise Exception("The Wirecloud resource could not be created")
 
     def on_post_create(self, resource):
         # Include widget type
