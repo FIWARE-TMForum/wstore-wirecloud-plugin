@@ -4,7 +4,7 @@
   "version": "1.0",
   "module": "wirecloud_plugin.WirecloudPlugin",
   "media_types": [
-      "Mashable application componet"
+      "Mashable application component"
   ],
   "formats": ["FILE", "URL"]
 }
