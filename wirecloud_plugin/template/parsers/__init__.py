@@ -18,15 +18,15 @@
 # along with Wirecloud.  If not, see <http://www.gnu.org/licenses/>.
 
 from copy import deepcopy
-from six.moves.urllib.parse import urljoin
+from urlparse import urljoin
 
 import six
 
 from ..base import TemplateParseException
-from .parsers.json import JSONTemplateParser
-from .parsers.next_xml import ApplicationMashupTemplateParser
-from .parsers.rdf import RDFTemplateParser
-from .parsers.xml import WirecloudTemplateParser
+from .json import JSONTemplateParser
+from .next_xml import ApplicationMashupTemplateParser
+from .rdf import RDFTemplateParser
+from .xml import WirecloudTemplateParser
 
 
 __all__ = ('TemplateParseException', 'TemplateParser')
