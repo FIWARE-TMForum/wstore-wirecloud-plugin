@@ -79,6 +79,8 @@ class WirecloudPlugin(Plugin):
             raise e
         except TemplateParseException as e:
             raise e
+        except ValueError as e:
+            raise e
         except:
             raise Exception("The Wirecloud resource could not be created")
 
