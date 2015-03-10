@@ -27,12 +27,12 @@ from django.conf import settings
 from wstore.offerings.resource_plugins.plugin import Plugin
 from .wgt import WgtFile, InvalidContents
 from .template import TemplateParser, TemplateParseException
+from .version import Version
 
 
 class WirecloudPlugin(Plugin):
 
-    _tmp_file = False
-    _wgt_path = None
+    _tmp_files = []
     _template_parser = None
 
     def _download_wgt(self, url, name):
@@ -54,27 +54,47 @@ class WirecloudPlugin(Plugin):
             # The URL is not valid
             raise ValueError('The URL provided is not valid: does not exists')
 
+        self._tmp_files.append(wgt_path)
+
         return wgt_path
+
+    def _get_template_parser(self, download_link, resource_path, name):
+        """
+        """
+        wgt_path = None
+        if download_link != '':
+            wgt_path = self._download_wgt(download_link, name)
+        else:
+            # Build wgt object from path
+            content_path = resource_path
+
+            if resource_path[0] == '/':
+                content_path = resource_path[1:]
+
+            wgt_path = os.path.join(settings.BASEDIR, content_path)
+
+        wgt_file = WgtFile(wgt_path)
+
+        # Get template file
+        template_file = wgt_file.get_template()
+        template_parser = TemplateParser(template_file)
+
+        return template_parser
+
+    def _remove_tmp_files(self):
+        # Remote tmp file if needed
+        for tmp in self._tmp_files:
+            try:
+                os.remove(tmp)
+            except:
+                pass
+
+        self._tmp_files = []
 
     def on_pre_create(self, provider, data):
         # Build WGT object from the provided WGT file
         try:
-            if data['link'] != '':
-                self._wgt_path = self._download_wgt(data['link'], data['name'])
-            else:
-                # build wgt object from path
-                content_path = data['content_path']
-
-                if data['content_path'][0] == '/':
-                    content_path = data['content_path'][1:]
-
-                self._wgt_path = os.path.join(settings.BASEDIR, content_path)
-
-            wgt_file = WgtFile(self._wgt_path)
-
-            # Get template file
-            template_file = wgt_file.get_template()
-            self._template_parser = TemplateParser(template_file)
+            self._template_parser = self._get_template_parser(data['link'], data['content_path'], data['name'])
         except InvalidContents as e:
             raise e
         except TemplateParseException as e:
@@ -98,11 +118,12 @@ class WirecloudPlugin(Plugin):
         # Include meta info
         resource.meta_info = self._template_parser.get_resource_info()
 
-        resource.save()
+        # If the resource file has been provided the resource should be open
+        if resource.resource_path != '':
+            resource.open = True
 
-        # Remote tmp file if needed
-        if self._tmp_file:
-            os.remove(self._wgt_path)
+        resource.save()
+        self._remove_tmp_files()
 
     def on_pre_update(self, resource):
         pass
@@ -111,7 +132,25 @@ class WirecloudPlugin(Plugin):
         pass
 
     def on_pre_upgrade(self, resource):
-        pass
+        # Check that the new mac is a bigger version of the existing one
+        # Open old wgt file
+        old_resource = resource.old_versions[-1]
+        old_wgt_parser = self._get_template_parser(old_resource.download_link, old_resource.resource_path, resource.name + '_old')
+
+        # Open new wgt file
+        self._template_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name)
+
+        # Compare name, vendor and version
+        old_version = Version(old_wgt_parser.get_resource_version())
+        new_version = Version(self._template_parser.get_resource_version())
+
+        if old_wgt_parser.get_resource_name() != self._template_parser.get_resource_name() \
+        or old_wgt_parser.get_resource_vendor() != self._template_parser.get_resource_vendor() \
+        or new_version <= old_version:
+            raise ValueError('The provided wgt file is not a new version of the existing one')
 
     def on_post_upgrade(self, resource):
-        pass
+        # Include new meta info
+        resource.meta_info = self._template_parser.get_resource_info()
+        resource.save()
+        self._remove_tmp_files()
