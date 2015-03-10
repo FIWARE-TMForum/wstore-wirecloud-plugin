@@ -91,6 +91,17 @@ class WirecloudPlugin(Plugin):
 
         self._tmp_files = []
 
+    def _get_media_type(self):
+        # Include widget type
+        valid_types = {
+            'widget': 'application/x-widget+mashable-application-component',
+            'mashup': 'application/x-mashup+mashable-application-component',
+            'operator': 'application/x-operator+mashable-application-component'
+        }
+
+        mac_type = self._template_parser.get_resource_type()
+        return valid_types[mac_type]
+
     def on_pre_create(self, provider, data):
         # Build WGT object from the provided WGT file
         try:
@@ -105,15 +116,8 @@ class WirecloudPlugin(Plugin):
             raise Exception("The Wirecloud resource could not be created")
 
     def on_post_create(self, resource):
-        # Include widget type
-        valid_types = {
-            'widget': 'application/x-widget+mashable-application-component',
-            'mashup': 'application/x-mashup+mashable-application-component',
-            'operator': 'application/x-operator+mashable-application-component'
-        }
-        mac_type = self._template_parser.get_resource_type()
 
-        resource.content_type = valid_types[mac_type]
+        resource.content_type = self._get_media_type()
 
         # Include meta info
         resource.meta_info = self._template_parser.get_resource_info()
@@ -125,11 +129,13 @@ class WirecloudPlugin(Plugin):
         resource.save()
         self._remove_tmp_files()
 
-    def on_pre_update(self, resource):
-        pass
-
     def on_post_update(self, resource):
-        pass
+        # Fix content type
+        self._template_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name)
+        resource.content_type = self._get_media_type()
+        resource.save()
+
+        self._remove_tmp_files()
 
     def on_pre_upgrade(self, resource):
         # Check that the new mac is a bigger version of the existing one
