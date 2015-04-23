@@ -6,5 +6,6 @@
   "media_types": [
       "Mashable application component"
   ],
-  "formats": ["FILE", "URL"]
+  "formats": ["FILE", "URL"],
+  "overrides": ["NAME", "VERSION"]
 }

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2012-2014 CoNWeT Lab., Universidad Politécnica de Madrid
+# Copyright (c) 2012-2015 CoNWeT Lab., Universidad Politécnica de Madrid
 
 # This file is part of Wirecloud.
 
@@ -25,9 +25,11 @@ import urllib
 from django.conf import settings
 
 from wstore.offerings.resource_plugins.plugin import Plugin
+from wstore.store_commons.utils.version import Version
+from wstore.store_commons.errors import ConflictError
+from wstore.models import Resource
 from .wgt import WgtFile, InvalidContents
 from .template import TemplateParser, TemplateParseException
-from .version import Version
 
 
 class WirecloudPlugin(Plugin):
@@ -115,11 +117,18 @@ class WirecloudPlugin(Plugin):
         except:
             raise Exception("The Wirecloud resource could not be created")
 
+        name = self._template_parser.get_resource_name()
+        # Validate that the resource can be created using the name in the wgt file
+        if len(Resource.object.filter(provider=provider, name=name)) > 0:
+            raise ConflictError("A resource already exists for the given wgt with name " + name + ", please upgrade the resource if you want to provide new content")
+
     def on_post_create(self, resource):
 
         resource.content_type = self._get_media_type()
 
         # Include meta info
+        resource.version = self._template_parser.get_resource_version()
+        resource.name = self._template_parser.get_resource_name()
         resource.meta_info = self._template_parser.get_resource_info()
 
         # If the resource file has been provided the resource should be open
@@ -158,5 +167,7 @@ class WirecloudPlugin(Plugin):
     def on_post_upgrade(self, resource):
         # Include new meta info
         resource.meta_info = self._template_parser.get_resource_info()
+        resource.version = self._template_parser.get_resource_version()
+
         resource.save()
         self._remove_tmp_files()
