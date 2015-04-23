@@ -147,6 +147,11 @@ class WirecloudPlugin(Plugin):
         if resource.resource_path != '':
             resource.open = True
 
+        if not len(resource.description):
+            processed_info = self._template_parser.get_resource_info()
+            if 'description' in processed_info:
+                resource.description = processed_info['description']
+
         resource.save()
         self._remove_tmp_files()
 
