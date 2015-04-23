@@ -122,6 +122,8 @@ class WirecloudPlugin(Plugin):
                 self._template_parser = self._get_template_parser_from_data(data['content'])
             elif 'link' in data:
                 self._template_parser = self._get_template_parser(data['link'], '', provider.username + data['name'])
+            else:
+                raise ValueError("No wgt file has been provided")
         except InvalidContents as e:
             raise e
         except TemplateParseException as e:
@@ -163,26 +165,41 @@ class WirecloudPlugin(Plugin):
 
         self._remove_tmp_files()
 
-    def on_pre_upgrade(self, resource):
-        # Check that the new mac is a bigger version of the existing one
-        # Open old wgt file
-        old_resource = resource.old_versions[-1]
-        old_wgt_parser = self._get_template_parser(old_resource.download_link, old_resource.resource_path, resource.name + '_old')
+    def on_pre_upgrade_validation(self, resource, data, file_=None):
+        # Build WGT object from the provided WGT file
+        try:
+            if file_ is not None:
+                self._template_parser = self._get_template_parser_from_file(file_)
+            elif 'content' in data:
+                self._template_parser = self._get_template_parser_from_data(data['content'])
+            elif 'link' in data:
+                self._template_parser = self._get_template_parser(data['link'], '', resource.provider.name + resource.name)
+            else:
+                raise ValueError("No wgt file has been provided")
+        except InvalidContents as e:
+            raise e
+        except TemplateParseException as e:
+            raise e
+        except ValueError as e:
+            raise e
+        except:
+            raise Exception("The Wirecloud resource could not be upgraded")
 
-        # Open new wgt file
-        self._template_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name)
+        old_wgt_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name + '_old')
 
-        # Compare name, vendor and version
-        old_version = Version(old_wgt_parser.get_resource_version())
-        new_version = Version(self._template_parser.get_resource_version())
-
+        # Check name and vendor of the wgt file
         if old_wgt_parser.get_resource_name() != self._template_parser.get_resource_name() \
-        or old_wgt_parser.get_resource_vendor() != self._template_parser.get_resource_vendor() \
-        or new_version <= old_version:
+        or old_wgt_parser.get_resource_vendor() != self._template_parser.get_resource_vendor():
             raise ValueError('The provided wgt file is not a new version of the existing one')
+
+        # Override version in data field
+        data['version'] = self._template_parser.get_resource_version()
+        self._remove_tmp_files()
+        return data
 
     def on_post_upgrade(self, resource):
         # Include new meta info
+        self._template_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name)
         resource.meta_info = self._template_parser.get_resource_info()
         resource.version = self._template_parser.get_resource_version()
 
