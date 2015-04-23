@@ -21,13 +21,13 @@ from __future__ import unicode_literals
 
 import os
 import urllib
+import base64
+from io import BytesIO
 
 from django.conf import settings
 
 from wstore.offerings.resource_plugins.plugin import Plugin
 from wstore.store_commons.utils.version import Version
-from wstore.store_commons.errors import ConflictError
-from wstore.models import Resource
 from .wgt import WgtFile, InvalidContents
 from .template import TemplateParser, TemplateParseException
 
@@ -60,6 +60,13 @@ class WirecloudPlugin(Plugin):
 
         return wgt_path
 
+    def _build_template_parser(self, wgt_file):
+        # Get template file
+        template_file = wgt_file.get_template()
+        template_parser = TemplateParser(template_file)
+
+        return template_parser
+
     def _get_template_parser(self, download_link, resource_path, name):
         """
         """
@@ -75,13 +82,15 @@ class WirecloudPlugin(Plugin):
 
             wgt_path = os.path.join(settings.BASEDIR, content_path)
 
-        wgt_file = WgtFile(wgt_path)
+        return self._build_template_parser(WgtFile(wgt_path))
 
-        # Get template file
-        template_file = wgt_file.get_template()
-        template_parser = TemplateParser(template_file)
+    def _get_template_parser_from_data(self, wgt_data):
+            wgt_file = WgtFile(BytesIO(base64.b64decode(wgt_data['data'])))
+            return self._build_template_parser(wgt_file)
 
-        return template_parser
+    def _get_template_parser_from_file(self, wgt):
+        wgt_file = WgtFile(wgt)
+        return self._build_template_parser(wgt_file)
 
     def _remove_tmp_files(self):
         # Remote tmp file if needed
@@ -104,10 +113,15 @@ class WirecloudPlugin(Plugin):
         mac_type = self._template_parser.get_resource_type()
         return valid_types[mac_type]
 
-    def on_pre_create(self, provider, data):
+    def on_pre_create_validation(self, provider, data, file_=None):
         # Build WGT object from the provided WGT file
         try:
-            self._template_parser = self._get_template_parser(data['link'], data['content_path'], data['name'])
+            if file_ is not None:
+                self._template_parser = self._get_template_parser_from_file(file_)
+            elif 'content' in data:
+                self._template_parser = self._get_template_parser_from_data(data['content'])
+            elif 'link' in data:
+                self._template_parser = self._get_template_parser(data['link'], '', provider.username + data['name'])
         except InvalidContents as e:
             raise e
         except TemplateParseException as e:
@@ -117,18 +131,16 @@ class WirecloudPlugin(Plugin):
         except:
             raise Exception("The Wirecloud resource could not be created")
 
-        name = self._template_parser.get_resource_name()
-        # Validate that the resource can be created using the name in the wgt file
-        if len(Resource.object.filter(provider=provider, name=name)) > 0:
-            raise ConflictError("A resource already exists for the given wgt with name " + name + ", please upgrade the resource if you want to provide new content")
+        # Override name and version of the resource
+        data['name'] = self._template_parser.get_resource_name()
+        data['version'] = self._template_parser.get_resource_version()
+        self._remove_tmp_files()
+        return data
 
     def on_post_create(self, resource):
 
+        self._template_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name)
         resource.content_type = self._get_media_type()
-
-        # Include meta info
-        resource.version = self._template_parser.get_resource_version()
-        resource.name = self._template_parser.get_resource_name()
         resource.meta_info = self._template_parser.get_resource_info()
 
         # If the resource file has been provided the resource should be open
