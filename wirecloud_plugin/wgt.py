@@ -23,8 +23,6 @@ from shutil import rmtree
 from six.moves.urllib.request import pathname2url
 import zipfile
 
-from wirecloud.commons.utils.template import TemplateParser
-
 
 class InvalidContents(Exception):
 
@@ -142,56 +140,3 @@ class WgtFile(object):
 
     def close(self):
         self._zip.close()
-
-
-class WgtDeployer(object):
-
-    def __init__(self, root_dir):
-
-        self._root_dir = root_dir
-
-    @property
-    def root_dir(self):
-        return self._root_dir
-
-    def get_base_dir(self, vendor, name, version):
-        return os.path.join(
-            self._root_dir,
-            vendor,
-            name,
-            version,
-        )
-
-    def deploy(self, wgt_file):
-
-        template_content = wgt_file.get_template()
-        template_parser = TemplateParser(template_content)
-
-        widget_rel_dir = os.path.join(
-            template_parser.get_resource_vendor(),
-            template_parser.get_resource_name(),
-            template_parser.get_resource_version(),
-        )
-        widget_dir = os.path.join(self._root_dir, widget_rel_dir)
-        template_parser.set_base(pathname2url(widget_rel_dir) + '/')
-
-        self._create_folders(widget_dir)
-        wgt_file.extract(widget_dir)
-
-        return template_parser
-
-    def undeploy(self, vendor, name, version):
-
-        base_dir = self.get_base_dir(vendor, name, version)
-
-        if os.path.isdir(base_dir):
-            rmtree(base_dir)
-
-    def _create_folders(self, widget_dir):
-
-        self._create_folder(self._root_dir)
-        self._create_folder(widget_dir)
-
-    def _create_folder(self, folder):
-        if not os.path.isdir(folder):
-            os.makedirs(folder)

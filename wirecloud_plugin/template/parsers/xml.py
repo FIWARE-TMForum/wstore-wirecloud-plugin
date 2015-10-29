@@ -28,7 +28,7 @@ from six import text_type
 
 from ..base import parse_contacts_info, TemplateParseException
 from ..translation import get_trans_index
-from ..wiring_utils import get_behaviour_skeleton, get_wiring_skeleton, parse_wiring_old_version
+from ..wiring import get_behaviour_skeleton, get_wiring_skeleton, parse_wiring_old_version
 
 
 XMLSCHEMA_FILE = codecs.open(os.path.join(os.path.dirname(__file__), '../schemas/xml_schema.xsd'), 'rb')
