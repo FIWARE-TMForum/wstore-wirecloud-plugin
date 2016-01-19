@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2012-2015 CoNWeT Lab., Universidad Politécnica de Madrid
+# Copyright (c) 2012-2016 CoNWeT Lab., Universidad Politécnica de Madrid
 
 # This file is part of Wirecloud.
 
@@ -26,7 +26,7 @@ from io import BytesIO
 
 from django.conf import settings
 
-from wstore.offerings.resource_plugins.plugin import Plugin
+from wstore.asset_manager.resource_plugins.plugin import Plugin
 from wstore.store_commons.utils.version import Version
 from .wgt import WgtFile, InvalidContents
 from .template import TemplateParser, TemplateParseException
@@ -68,9 +68,6 @@ class WirecloudPlugin(Plugin):
         return template_parser
 
     def _get_template_parser(self, download_link, resource_path, name):
-        """
-        """
-        wgt_path = None
         if download_link != '':
             wgt_path = self._download_wgt(download_link, name)
         else:
@@ -113,17 +110,23 @@ class WirecloudPlugin(Plugin):
         mac_type = self._template_parser.get_resource_type()
         return valid_types[mac_type]
 
-    def on_pre_create_validation(self, provider, data, file_=None):
+    def _get_paths(self, asset):
+        if len(asset.resource_path):
+            local_path = asset.resource_path
+            ext_url = ''
+        else:
+            local_path = ''
+            ext_url = asset.download_link
+
+        return local_path, ext_url
+
+    def on_post_product_spec_validation(self, provider, asset):
         # Build WGT object from the provided WGT file
+
+        local_path, ext_url = self._get_paths(asset)
+
         try:
-            if file_ is not None:
-                self._template_parser = self._get_template_parser_from_file(file_)
-            elif 'content' in data:
-                self._template_parser = self._get_template_parser_from_data(data['content'])
-            elif 'link' in data:
-                self._template_parser = self._get_template_parser(data['link'], '', provider.username + data['name'])
-            else:
-                raise ValueError("No wgt file has been provided")
+            self._template_parser = self._get_template_parser(ext_url, local_path, asset.pk)
         except InvalidContents as e:
             raise e
         except TemplateParseException as e:
@@ -133,75 +136,18 @@ class WirecloudPlugin(Plugin):
         except:
             raise Exception("The Wirecloud resource could not be created")
 
-        # Override name and version of the resource
-        data['name'] = self._template_parser.get_resource_name()
-        data['version'] = self._template_parser.get_resource_version()
-        self._remove_tmp_files()
-        return data
-
-    def on_post_create(self, resource):
-
-        self._template_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name)
-        resource.content_type = self._get_media_type()
-        resource.meta_info = self._template_parser.get_resource_info()
-
-        # If the resource file has been provided the resource should be open
-        if resource.resource_path != '':
-            resource.open = True
-
-        if not len(resource.description):
-            processed_info = self._template_parser.get_resource_info()
-            if 'description' in processed_info:
-                resource.description = processed_info['description']
-
-        resource.save()
         self._remove_tmp_files()
 
-    def on_post_update(self, resource):
-        # Fix content type
-        self._template_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name)
-        resource.content_type = self._get_media_type()
-        resource.save()
+    def on_post_product_spec_attachment(self, asset, asset_t, product_spec):
 
-        self._remove_tmp_files()
+        local_path, ext_url = self._get_paths(asset)
+        self._template_parser = self._get_template_parser(ext_url, local_path, asset.pk)
 
-    def on_pre_upgrade_validation(self, resource, data, file_=None):
-        # Build WGT object from the provided WGT file
-        try:
-            if file_ is not None:
-                self._template_parser = self._get_template_parser_from_file(file_)
-            elif 'content' in data:
-                self._template_parser = self._get_template_parser_from_data(data['content'])
-            elif 'link' in data:
-                self._template_parser = self._get_template_parser(data['link'], '', resource.provider.name + resource.name)
-            else:
-                raise ValueError("No wgt file has been provided")
-        except InvalidContents as e:
-            raise e
-        except TemplateParseException as e:
-            raise e
-        except ValueError as e:
-            raise e
-        except:
-            raise Exception("The Wirecloud resource could not be upgraded")
+        # TODO: PATCH the product specification in order to reflect the overridden
+        # TODO: fields (name, version, content_type and optionally description)
 
-        old_wgt_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name + '_old')
+        asset.content_type = self._get_media_type()
+        asset.meta_info = self._template_parser.get_resource_info()
 
-        # Check name and vendor of the wgt file
-        if old_wgt_parser.get_resource_name() != self._template_parser.get_resource_name() \
-        or old_wgt_parser.get_resource_vendor() != self._template_parser.get_resource_vendor():
-            raise ValueError('The provided wgt file is not a new version of the existing one')
-
-        # Override version in data field
-        data['version'] = self._template_parser.get_resource_version()
-        self._remove_tmp_files()
-        return data
-
-    def on_post_upgrade(self, resource):
-        # Include new meta info
-        self._template_parser = self._get_template_parser(resource.download_link, resource.resource_path, resource.name)
-        resource.meta_info = self._template_parser.get_resource_info()
-        resource.version = self._template_parser.get_resource_version()
-
-        resource.save()
+        asset.save()
         self._remove_tmp_files()
