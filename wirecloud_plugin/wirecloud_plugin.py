@@ -24,6 +24,8 @@ import urllib
 import base64
 from io import BytesIO
 
+import requests
+
 from django.conf import settings
 
 from wstore.asset_manager.resource_plugins.plugin import Plugin
@@ -102,9 +104,9 @@ class WirecloudPlugin(Plugin):
     def _get_media_type(self):
         # Include widget type
         valid_types = {
-            'widget': 'application/x-widget+mashable-application-component',
-            'mashup': 'application/x-mashup+mashable-application-component',
-            'operator': 'application/x-operator+mashable-application-component'
+            'widget': 'wirecloud/widget',
+            'mashup': 'wirecloud/mashup',
+            'operator': 'wirecloud/operator'
         }
 
         mac_type = self._template_parser.get_resource_type()
@@ -122,7 +124,6 @@ class WirecloudPlugin(Plugin):
 
     def on_post_product_spec_validation(self, provider, asset):
         # Build WGT object from the provided WGT file
-
         local_path, ext_url = self._get_paths(asset)
 
         try:
@@ -139,15 +140,36 @@ class WirecloudPlugin(Plugin):
         self._remove_tmp_files()
 
     def on_post_product_spec_attachment(self, asset, asset_t, product_spec):
+        def changeMediaType(spec, media):
+            if spec.get("name") == "Media type":
+                spec["productSpecCharacteristicValue"][0]["value"] = media
+            return spec
 
         local_path, ext_url = self._get_paths(asset)
         self._template_parser = self._get_template_parser(ext_url, local_path, asset.pk)
 
-        # TODO: PATCH the product specification in order to reflect the overridden
-        # TODO: fields (name, version, content_type and optionally description)
+        media_type = self._get_media_type()
 
-        asset.content_type = self._get_media_type()
+        asset.content_type = media_type
         asset.meta_info = self._template_parser.get_resource_info()
 
         asset.save()
+
+        # Update product specification
+
+        product_spec["productSpecCharacteristic"] = [changeMediaType(x, media_type) for x in product_spec["productSpecCharacteristic"]]
+        headers = {
+            'content-type': 'application/json',
+            'X-Nick-Name': settings.STORE_NAME,
+            'X-Roles': 'provider',
+            'X-Email': settings.WSTOREMAIL
+        }
+
+        url = settings.CATALOG
+        if not url.endswith("/"):
+            url += "/"
+        url += "api/catalogManagement/v2/productSpecification/{}".format(product_spec["id"])
+
+        requests.put(url, json=product_spec, headers=headers)
+
         self._remove_tmp_files()
